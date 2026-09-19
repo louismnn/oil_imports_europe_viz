@@ -22,6 +22,9 @@ def order_datas(country_iso_code: str) -> pd.DataFrame:
     partner_iso_codes = df_init["partner_iso_code"].unique().tolist()
     data_index = df_init["time_period"].unique().tolist()
 
+    if "EL" in partner_iso_codes:
+        partner_iso_codes = ["GR" if x == "EL" else x for x in partner_iso_codes]
+    
     df = pd.DataFrame(index=data_index, columns=partner_iso_codes)
 
     for j in data_index:
@@ -30,8 +33,9 @@ def order_datas(country_iso_code: str) -> pd.DataFrame:
 
     df = df.astype("float64", errors="ignore")
 
-    if "EU27_2020" in list(df.columns):
-        del df["EU27_2020"]
+    for i in ["CN_X_HK", "EU27_2020"]:
+        if i in list(df.columns):
+            del df[i]
 
     my_set  = set()
 
@@ -44,10 +48,25 @@ def order_datas(country_iso_code: str) -> pd.DataFrame:
 
     df["OTHERS"] =  2 * df["TOTAL"] - df[my_list].sum(axis=1)
 
+    if "XK" in list(df.columns):
+        if "AL" in list(df.columns):
+            df["AL"] = df["AL"] + df["XK"]
+            del df["XK"]
+        else:
+            df.columns = df.columns.str.replace("XK", "AL")
+
+    columns_to_remove = {"ASI_OTH", "AME_OTH", "AFR_OTH", "ASI_NME", "EX_SU_OTH", "NSP"}
+
+    if set(df.columns) - columns_to_remove != set(df.columns):
+        for col in list(columns_to_remove):
+            if col in list(df.columns):
+                df["OTHERS"] = df["OTHERS"] + df[col]
+                del df[col]
+
     return df
 
 
-def fetch_data_from_eurostat() -> pd.DataFrame:
+def fetch_data_from_eurostat() -> None:
     """
     Fetch data from the Eurostat API and return it as a pandas DataFrame.
     """
@@ -65,8 +84,13 @@ def fetch_data_from_eurostat() -> pd.DataFrame:
     df.to_csv(r"assets\eurostat_data.csv")
 
 
+
 def get_simple_keys(data: str | dict, parent_key='product_type') -> list:
     result = []
     for key in data[parent_key].keys():
             result.append(key)
     return result
+
+
+
+
