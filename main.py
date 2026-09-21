@@ -1,10 +1,11 @@
 from dash import Dash, dcc, html, Input, Output, callback
 from generate_time_series import generate_time_series
+from datetime import datetime, timedelta
 from geopy.geocoders import Nominatim
 import dash_leaflet as dl
-import util
 import pandas as pd
-from datetime import datetime, timedelta
+import util
+
 
 
 try:
