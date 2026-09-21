@@ -1,84 +1,33 @@
 from dash import Dash, dcc, html, Input, Output, callback
 from generate_time_series import generate_time_series
-from generate_points import curved_line
 from geopy.geocoders import Nominatim
-from  countryinfo import CountryInfo
 import dash_leaflet as dl
-import json
 import util
+import pandas as pd
+from datetime import datetime, timedelta
 
 
+try:
+    df = pd.read_csv(r"assets\eurostat_data.csv", encoding="utf-8")
+    maximum_date = pd.to_datetime(df["time_period"], format="%Y-%m").max()
 
-class GenerateMap:
-    def __init__(self):
-        self.geolocator = Nominatim(user_agent="oil_europe_viz")
-        self.iso_code = None
-        self.patterns = [{
-            "offset" : "100%",
-            "repeat" : "0",
-            "arrowHead" : {
-                "pixelSize" : 15, 
-                "polygon" : False,
-                "headAngle": 65,
-                "pathOptions" : {
-                    "stroke" : True
-                    }
-                }
-        }]
+    if maximum_date < (datetime.now() - timedelta(days=120)):
+        raise FileNotFoundError
 
-    def get_datas(self, latlng: tuple) -> str | None:
-
-        location = self.geolocator.reverse(latlng)
-
-        try:
-            iso_code_temp = location.raw["address"].get("country_code", {}).upper()
-            print(iso_code_temp)
-
-        except AttributeError:
-            return self.iso_code
-
-        with open(r"assets\database.json", "r") as f:
-            d = json.load(f).get("country_europe", [])
-
-            if iso_code_temp in list(d.keys()):
-                self.iso_code = iso_code_temp
-                self.df = util.order_datas(self.iso_code)
-            else:
-                raise ValueError("Country is unknow")
-
-            return self.iso_code
-
-    def generate_polylines(self, curvature=0.1) -> list[dl.Polyline]:
-
-        list_partners = list(self.df.columns)
-        list_partners.remove("TOTAL")
-        list_partners.remove("OTHERS")
-
-        lines_objects = []
-
-        f = CountryInfo(self.iso_code).latlng()
-
-        for country in list_partners:
-
-            r = CountryInfo(country).latlng()
-            vec = curved_line(r, f, curvature=curvature)
-
-            lines_objects.append(
-                dl.PolylineDecorator(
-                    children=dl.Polyline(positions=vec),
-                    patterns=self.patterns
-                    )
-                )
-
-        return lines_objects
+except FileNotFoundError:
+    util.fetch_datas_from_eurostat()
+    util.normalize_datas()
 
 
-
-Map = GenerateMap()
 app = Dash("Europe Oil Imports")
+geolocator = Nominatim(user_agent="oil_europe_viz")
+
 
 app.layout = html.Div(
             children = [
+
+                dcc.Store(id="store_datas", data={"country" : None}, storage_type="memory"),
+
                 html.H1("Europe Oil Imports", className="custom_title"),
 
                 dl.Map(
@@ -86,40 +35,63 @@ app.layout = html.Div(
                     className="custom_map",
                     children = [dl.TileLayer()],
                     center=[56, 10],
+                    boxZoom=False,
                     zoom=6
                 ),
 
                 dcc.Graph(
                     id = "time_series",
-                    figure = generate_time_series(None),
-                    style={"width":"80%","height": "20vh"}
+                    figure = generate_time_series(),
+                    className="custom_time_series"
                 )
             ],
             className="main_panel",
         )
 
 
+
 @callback(
-    Output("time_series", "figure"),
-    Output("map", "children"),
+    Output("store_datas", "data"),
     Input("map", "clickData"),
-    prevent_initial_call = True,
+    prevent_initial_call = True
 )
-def actualisation(click_data):
+def store_datas(click_data):
 
     if click_data is None:
-        return generate_time_series(Map.iso_code), [dl.TileLayer()]
+        return None
 
     latlng = tuple(click_data.get("latlng", {}).values())
 
-    iso_code = Map.get_datas(latlng=latlng)
+    try:
+        location = geolocator.reverse(latlng)
+        iso_code = location.raw["address"].get("country_code", {}).upper()
+        return util.check_iso_code(iso_code)
+    
+    except AttributeError:
+        return None
 
-    if iso_code == None:
-        return generate_time_series(Map.iso_code), [dl.TileLayer()]
 
-    polyline_list = Map.generate_polylines()
+@callback(
+    Output("time_series", "figure"),
+    Output("map", "children"),
+    Input("store_datas", "data"),
+    prevent_initial_call = True,
+)
+def actualisation(iso_code):
+
+    if iso_code is None:
+        return generate_time_series(), [dl.TileLayer()]
+
+    datas = util.order_datas(iso_code)
+    countries = list(datas.columns)
+    countries.remove('OTHERS')
+
+    polyline_list = util.generate_polylines(iso_code_consumer=iso_code,
+                                            iso_code_partner=countries)
 
     return generate_time_series(iso_code), [dl.TileLayer()] + polyline_list
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)

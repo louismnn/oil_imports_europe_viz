@@ -2,7 +2,7 @@ import plotly.graph_objects as go
 import util
 
 
-def generate_time_series(iso_code: str | None) -> go.Figure:
+def generate_time_series(iso_code = None | str) -> go.Figure:
 
     fig = go.Figure()
 
@@ -12,8 +12,8 @@ def generate_time_series(iso_code: str | None) -> go.Figure:
 
         yaxis=dict(
             type='linear',
-            range=[1, 100],
-            ticksuffix='%'),
+            range=[1, 100]
+            ),
 
         legend=dict(
             orientation="h",
@@ -21,16 +21,16 @@ def generate_time_series(iso_code: str | None) -> go.Figure:
             y=-0.3,
             xanchor="center",
             x=0.5,
-            font=dict(color="black"),
-            bgcolor="rgba(0,0,0,0)"),
+            font=dict(color="white"),
+            bgcolor="rgba(0,0,0,0)"
+            ),
 
         plot_bgcolor="black",
         paper_bgcolor="black",
         font=dict(color="white"),
 
-        height=400,
+        height=200,
         autosize=True,
-
         margin=dict(t=0, b=0, l=0, r=0),
     )
 
@@ -40,26 +40,29 @@ def generate_time_series(iso_code: str | None) -> go.Figure:
         ticks="inside",
         showline=False,
         showgrid=False,
-        tickangle=45,
-        tickfont=dict(size=10, color="white")
+        fixedrange=True,
+        tickangle=90,
+        tickfont=dict(size=7, color="white")
     )
 
     fig.update_yaxes(
         showticklabels=False,
         showline=False,
         showgrid=False,
+        fixedrange=True,
         ticklabelposition="inside",
-        ticks="inside",
+        ticks="",
     )
+
+    fig.update_traces(visible=False)
 
     if iso_code == None:
         return fig
-    
+
     df = util.order_datas(iso_code)
 
     x = list(df.index)
     y = list(df.columns)
-    y.remove("TOTAL")
 
     for col in y:
         fig.add_trace(go.Scatter(
@@ -70,5 +73,10 @@ def generate_time_series(iso_code: str | None) -> go.Figure:
             name = util.get_country_name(col),
             groupnorm='percent'
         ))
+
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=x[1:-1],
+    )
 
     return fig

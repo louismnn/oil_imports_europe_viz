@@ -30,3 +30,8 @@ body {
     height: 500px;
     width: 80%;
 }
+
+.custom_time_series {
+    width: 80%;
+    height: 20vh;
+}
