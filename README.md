@@ -58,7 +58,7 @@ The main dependencies are Dash, Dash Leaflet, Plotly, pandas, NumPy, geopy, and 
 4. Wait for reverse geocoding to identify the country.
 5. Inspect the highlighted country, partner routes, tooltips, and time-series graph.
 
-![Example for Germany](assets\fig_0.png)
+![Example for Germany](assets/fig_0.png)
 
 The first click may take a few seconds because the application contacts the Nominatim reverse-geocoding service.
 
