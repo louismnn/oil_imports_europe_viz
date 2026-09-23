@@ -1,21 +1,27 @@
-import pandas as pd
 from datetime import datetime, timedelta
+from countryinfo import CountryInfo
+from geopy.distance import geodesic
+import dash_leaflet as dl
+import pandas as pd
+import numpy as np
 import json
 import os
-import numpy as np
-from countryinfo import CountryInfo
-import dash_leaflet as dl
 
 
+
+with open(r"assets\database.json", "r") as f:
+    DATABASE_COUNTRIES_NAME = json.load(f).get("country_name", {})
 
 def get_country_name(iso_code : str) -> str:
-    with open(r"assets\database.json", "r") as f:
-        data = json.load(f)
-        return data["country_name"][iso_code]
+        return DATABASE_COUNTRIES_NAME.get(iso_code, "")
+
+def get_country_iso_code(country_name : str) -> str:
+        d2 = {v: k for k, v in DATABASE_COUNTRIES_NAME.items()}
+        return d2.get(country_name, "")
 
 
 
-def order_datas(country_iso_code: str) -> pd.DataFrame:
+def order_datas(country_iso_code: str):
     """
     Return a DataFrame with the data ordered by time_period (index) and partner_iso_code (columns) for a specific country.
     """
@@ -30,15 +36,19 @@ def order_datas(country_iso_code: str) -> pd.DataFrame:
     my_set = set()
 
     for i in range(len(df)):
-        second_highest_value = df.iloc[i].nlargest(n=4)
+        second_highest_value = df.iloc[i].nlargest(n=3)
         my_set.update(second_highest_value.index)
 
     df_final = df[list(my_set)]
 
-    df_final["OTHERS"] = df.sum(axis=1) - df_final.sum(axis=1)
+    df_final["OTHERS"] = df.sum(axis=1) - df_final[list(my_set)].sum(axis=1)
+    del df
     df_final.index = df_final.index.strftime("%Y-%m")
 
-    return df_final
+    weights_last_period = df_final.iloc[-1].div(df_final.iloc[-1].sum(axis=0)).dropna()
+    weights_last_period = dict(((weights_last_period * 25000).pow(2/5) - 10).round(0))
+
+    return df_final, {v:int(k) for v,k in weights_last_period.items()}
 
 
 
@@ -46,6 +56,7 @@ def fetch_datas_from_eurostat() -> None:
     """
     Fetch data from the Eurostat API and return it as a pandas DataFrame.
     """
+    print("Getting the datas from Eurostat 🔜")
 
     start = "2024-01"
     end = (datetime.now() - timedelta(days=62)).strftime("%Y-%m")
@@ -58,12 +69,13 @@ def fetch_datas_from_eurostat() -> None:
     df = pd.read_csv(api_url, usecols=["partner", "geo", "TIME_PERIOD", 'OBS_VALUE'])
 
     df.to_csv(r"assets\eurostat_data_raw.csv", index=False, encoding="utf-8")
+    print("Datas sucessfully downloaded ✅")
 
 
 
 def normalize_datas() -> None:
 
-    df = pd.read_csv(r"assets\eurostat_data.csv")
+    df = pd.read_csv(r"assets\eurostat_data_raw.csv", encoding="utf-8")
 
     df.columns = ["partner_iso_code", "consumer_iso_code", "time_period", "obs_value"]
 
@@ -87,19 +99,37 @@ def normalize_datas() -> None:
 
 
 
+with open(r"assets\database.json", "r") as f:
+    DATABASE_COUNTRIES_EUROPE = json.load(f).get("country_europe", {})
+
 def check_iso_code(iso_code: str) -> None | str:
-
-    with open(r"assets\database.json", "r") as f:
-        d = json.load(f).get("country_europe", {})
-
-        if iso_code in list(d.keys()):
-            return iso_code
-        else:
-            return None
+    return iso_code if iso_code in DATABASE_COUNTRIES_EUROPE else None
 
 
 
-def curved_line(A, B, curvature=0.2, n=100):
+def shorten_line(A: list | tuple, B: list | tuple, distance_before_B=100):
+    """
+    A and B: (latitude, longitude)
+    distance_before_B: distance in km
+    """
+
+    total_distance = geodesic(A, B).km
+
+    if distance_before_B >= total_distance:
+        return A
+
+    ratio = (total_distance - distance_before_B) / total_distance
+
+    new_lat = A[0] + ratio * (B[0] - A[0])
+    new_lon = A[1] + ratio * (B[1] - A[1])
+
+    return new_lat, new_lon
+
+
+
+def curved_line(A: list | tuple, B: list | tuple, curvature=0.2, n=100) -> list:
+
+    B = shorten_line(A, B)
 
     A = np.array(A)
     B = np.array(B)
@@ -120,37 +150,98 @@ def curved_line(A, B, curvature=0.2, n=100):
         + t[:, None]**2 * B
     )
 
-    return points.tolist()
+    return points.tolist(), B.tolist()
 
 
 
-def generate_polylines(iso_code_consumer: str, iso_code_partner: list, curvature=0.1) -> list[dl.Polyline]:
+def generate_polylines(iso_code_consumer: str,
+                       weights: dict,
+                       curvature=0.1
+                       ) -> list[dl.Polyline]:
+
+    colors = [
+        '#30123b', '#4145ab', '#4675ed', '#39a2fc', '#1bcfd4', '#24eca6',
+        '#61fc6c', '#a4fc3b', '#d1e834', '#f3c63a', '#fe9b2d', '#f36315',
+        '#d93806','#b11901', '#7a0402', '#440154', '#482878', '#3e4989',
+        '#31688e','#26828e','#1f9e89', '#35b779', '#6ece58', '#b5de2b',
+        '#fde725']
 
     lines_objects = []
 
     f = CountryInfo(iso_code_consumer).latlng()
 
-    for country in iso_code_partner:
+    for country, color in zip(weights.keys(), colors):
 
-        r = CountryInfo(country).latlng()
-        vec = curved_line(r, f, curvature=curvature)
+        if country not in ["OTHERS", iso_code_consumer]:
 
-        lines_objects.append(
-            dl.PolylineDecorator(
-                children=dl.Polyline(positions=vec),
-                patterns = [{
-                            "offset" : "100%",
-                            "repeat" : "0",
-                            "arrowHead" : {
-                                "pixelSize" : 15, 
-                                "polygon" : False,
-                                "headAngle": 65,
-                                "pathOptions" : {
-                                    "stroke" : True
+            r = CountryInfo(country).latlng()
+            vec, b = curved_line(r, f, curvature=curvature)
+
+            lines_objects.append(dl.CircleMarker(
+                center=b,
+                radius=25,
+                fillOpacity=0,
+                opacity=0,
+                children=[
+                    dl.Tooltip(f"""Oil import route: {get_country_name(country)}"""),
+                ],
+            ))
+
+            lines_objects.append(
+                dl.PolylineDecorator(
+                    children=dl.Polyline(positions=vec,
+                                         color=color,
+                                         pathOptions={
+                                            "weight" : weights.get(country, 10),
+                                            "lineCap": "butt",
+                                            "lineJoin": "miter",
+                                            "opacity": 1,
+                                        }
+                                    ),
+                    patterns = [{
+                                "offset" : "100%",
+                                "repeat" : "0",
+                                "arrowHead" : {
+                                    "pixelSize" : weights.get(country, 10), 
+                                    "polygon" : False,
+                                    "headAngle": 65,
+                                    "pathOptions" : {
+                                        "stroke" : True,
+                                        "color" : color,
+                                        "weight": weights.get(country, 10),
+                                        "opacity": 1,
+                                        "lineCap": "butt",
+                                        "lineJoin": "miter",
+                                        }
                                     }
-                                }
-                        }]
+                            }]
+                    )
                 )
-            )
 
     return lines_objects
+
+
+
+def _reverse_coords(coords: list):
+    if isinstance(coords[0], (int, float)):
+        coords.reverse()
+    else:
+        for coord in coords:
+            _reverse_coords(coord)
+
+
+
+def reverse_coordinates(iso_code: str) -> list:
+
+    with open(f"assets\\countries\\10m\\{iso_code}.geojson", "r", encoding="utf-8") as file:
+        geo = json.load(file)["features"]
+
+        final_coordinates = []
+
+        for i in geo:
+            for coords in i["geometry"]["coordinates"]:
+                _reverse_coords(coords)
+
+            final_coordinates.append(i["geometry"]["coordinates"])
+
+        return final_coordinates

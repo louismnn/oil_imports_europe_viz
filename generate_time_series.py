@@ -2,10 +2,11 @@ import plotly.graph_objects as go
 import util
 
 
-def generate_time_series(iso_code = None | str) -> go.Figure:
+
+def generate_init_graph() -> go.Figure:
 
     fig = go.Figure()
-
+    
     fig.update_layout(
         showlegend=True,
         xaxis_type='category',
@@ -56,27 +57,36 @@ def generate_time_series(iso_code = None | str) -> go.Figure:
 
     fig.update_traces(visible=False)
 
-    if iso_code == None:
-        return fig
+    return fig
 
-    df = util.order_datas(iso_code)
+
+
+def generate_time_series(iso_code: str):
+
+    fig = generate_init_graph()
+
+    df, weights = util.order_datas(iso_code)
+
+    colors = [
+        '#30123b', '#4145ab', '#4675ed', '#39a2fc', '#1bcfd4', '#24eca6',
+        '#61fc6c', '#a4fc3b', '#d1e834', '#f3c63a', '#fe9b2d', '#f36315',
+        '#d93806','#b11901', '#7a0402', '#440154', '#482878', '#3e4989',
+        '#31688e','#26828e','#1f9e89', '#35b779', '#6ece58', '#b5de2b',
+        '#fde725']
 
     x = list(df.index)
     y = list(df.columns)
 
-    for col in y:
+    for col, color in zip(y, colors):
         fig.add_trace(go.Scatter(
             x=x, y=df[col],
             mode='lines',
-            line=dict(width=0.5),
+            line=dict(width=0.8, color=color),
             stackgroup='one',
             name = util.get_country_name(col),
             groupnorm='percent'
         ))
 
-    fig.update_xaxes(
-        tickmode="array",
-        tickvals=x[1:-1],
-    )
+    fig.update_xaxes(tickmode="array", tickvals=x[1:-1])
 
-    return fig
+    return fig, weights

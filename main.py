@@ -1,23 +1,24 @@
+from generate_time_series import generate_time_series, generate_init_graph
 from dash import Dash, dcc, html, Input, Output, callback
-from generate_time_series import generate_time_series
 from datetime import datetime, timedelta
 from geopy.geocoders import Nominatim
 import dash_leaflet as dl
 import pandas as pd
 import util
+import time
 
 
 
 try:
-    df = pd.read_csv(r"assets\eurostat_data.csv", encoding="utf-8")
+    df = pd.read_csv(r"assets\eurostat_data.csv", encoding="utf-8", usecols=["time_period"])
     maximum_date = pd.to_datetime(df["time_period"], format="%Y-%m").max()
 
     if maximum_date < (datetime.now() - timedelta(days=120)):
         raise FileNotFoundError
 
 except FileNotFoundError:
-    util.fetch_datas_from_eurostat()
-    util.normalize_datas()
+    a = util.fetch_datas_from_eurostat()
+    b = util.normalize_datas()
 
 
 app = Dash("Europe Oil Imports")
@@ -34,15 +35,19 @@ app.layout = html.Div(
                 dl.Map(
                     id = "map",
                     className="custom_map",
-                    children = [dl.TileLayer()],
+                    children = [dl.TileLayer(opacity=3), dl.ScaleControl(position="bottomleft")],
                     center=[56, 10],
-                    boxZoom=False,
-                    zoom=6
+                    zoom=6,
+                    zoomControl=False,
+                    zoomDelta=6,
+                    maxZoom=6,
+                    minZoom=6,
+                    maxBounds=[[34, -25], [72, 45]]
                 ),
 
                 dcc.Graph(
                     id = "time_series",
-                    figure = generate_time_series(),
+                    figure = generate_init_graph(),
                     className="custom_time_series"
                 )
             ],
@@ -67,9 +72,10 @@ def store_datas(click_data):
         location = geolocator.reverse(latlng)
         iso_code = location.raw["address"].get("country_code", {}).upper()
         return util.check_iso_code(iso_code)
-    
+
     except AttributeError:
         return None
+
 
 
 @callback(
@@ -81,18 +87,17 @@ def store_datas(click_data):
 def actualisation(iso_code):
 
     if iso_code is None:
-        return generate_time_series(), [dl.TileLayer()]
+        return generate_init_graph(), [dl.TileLayer(opacity=3), dl.ScaleControl(position="bottomleft")]
 
-    datas = util.order_datas(iso_code)
-    countries = list(datas.columns)
-    countries.remove('OTHERS')
+    fig, weights = generate_time_series(iso_code)
+    polyline_list = util.generate_polylines(iso_code_consumer=iso_code, weights=weights)
 
-    polyline_list = util.generate_polylines(iso_code_consumer=iso_code,
-                                            iso_code_partner=countries)
-
-    return generate_time_series(iso_code), [dl.TileLayer()] + polyline_list
-
+    return fig, [dl.TileLayer(opacity=3),
+                 dl.ScaleControl(position="bottomleft"),
+                 dl.Polygon(positions=util.reverse_coordinates(iso_code),
+                            color="blue", opacity=0.3, fillColor='blue', fillOpacity=0.3)
+                 ] + polyline_list
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=3000)
