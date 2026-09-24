@@ -3,14 +3,17 @@ from dash import Dash, dcc, html, Input, Output, callback
 from datetime import datetime, timedelta
 from geopy.geocoders import Nominatim
 import dash_leaflet as dl
+from pathlib import Path
 import pandas as pd
 import util
-import time
 
 
+
+directory = Path(__file__).resolve().parent
+csv_path = directory / r"assets\eurostat_data.csv"
 
 try:
-    df = pd.read_csv(r"assets\eurostat_data.csv", encoding="utf-8", usecols=["time_period"])
+    df = pd.read_csv(csv_path, encoding="utf-8", usecols=["time_period"])
     maximum_date = pd.to_datetime(df["time_period"], format="%Y-%m").max()
 
     if maximum_date < (datetime.now() - timedelta(days=120)):
@@ -35,7 +38,7 @@ app.layout = html.Div(
                 dl.Map(
                     id = "map",
                     className="custom_map",
-                    children = [dl.TileLayer(opacity=3), dl.ScaleControl(position="bottomleft")],
+                    children = [dl.TileLayer(), dl.ScaleControl(position="bottomleft")],
                     center=[56, 10],
                     zoom=6,
                     zoomControl=False,
@@ -87,12 +90,12 @@ def store_datas(click_data):
 def actualisation(iso_code):
 
     if iso_code is None:
-        return generate_init_graph(), [dl.TileLayer(opacity=3), dl.ScaleControl(position="bottomleft")]
+        return generate_init_graph(), [dl.TileLayer(), dl.ScaleControl(position="bottomleft")]
 
     fig, weights = generate_time_series(iso_code)
     polyline_list = util.generate_polylines(iso_code_consumer=iso_code, weights=weights)
 
-    return fig, [dl.TileLayer(opacity=3),
+    return fig, [dl.TileLayer(),
                  dl.ScaleControl(position="bottomleft"),
                  dl.Polygon(positions=util.reverse_coordinates(iso_code),
                             color="blue", opacity=0.3, fillColor='blue', fillOpacity=0.3)
@@ -100,4 +103,4 @@ def actualisation(iso_code):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=3000)
+    app.run(debug=False, port=3000, host="0.0.0.0")
