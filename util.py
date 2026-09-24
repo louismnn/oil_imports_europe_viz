@@ -2,22 +2,25 @@ from datetime import datetime, timedelta
 from countryinfo import CountryInfo
 from geopy.distance import geodesic
 import dash_leaflet as dl
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import json
 import os
 
 
+directory = Path(__file__).resolve().parent
 
-with open(r"assets\database.json", "r") as f:
+csv_path = directory / r"assets\eurostat_data.csv"
+csv_raw_path = directory / r"assets\eurostat_data_raw.csv"
+database_path = directory / r"assets\database.json"
+
+
+with open(database_path, "r") as f:
     DATABASE_COUNTRIES_NAME = json.load(f).get("country_name", {})
 
 def get_country_name(iso_code : str) -> str:
         return DATABASE_COUNTRIES_NAME.get(iso_code, "")
-
-def get_country_iso_code(country_name : str) -> str:
-        d2 = {v: k for k, v in DATABASE_COUNTRIES_NAME.items()}
-        return d2.get(country_name, "")
 
 
 
@@ -26,7 +29,7 @@ def order_datas(country_iso_code: str):
     Return a DataFrame with the data ordered by time_period (index) and partner_iso_code (columns) for a specific country.
     """
 
-    df = pd.read_csv(r"assets\eurostat_data.csv")
+    df = pd.read_csv(csv_path)
 
     df = df[df["consumer_iso_code"] == country_iso_code]
     df["time_period"] = pd.to_datetime(df["time_period"], format="%Y-%m", errors="coerce")
@@ -68,14 +71,14 @@ def fetch_datas_from_eurostat() -> None:
 
     df = pd.read_csv(api_url, usecols=["partner", "geo", "TIME_PERIOD", 'OBS_VALUE'])
 
-    df.to_csv(r"assets\eurostat_data_raw.csv", index=False, encoding="utf-8")
+    df.to_csv(csv_path, index=False, encoding="utf-8")
     print("Datas sucessfully downloaded ✅")
 
 
 
 def normalize_datas() -> None:
 
-    df = pd.read_csv(r"assets\eurostat_data_raw.csv", encoding="utf-8")
+    df = pd.read_csv(csv_raw_path, encoding="utf-8")
 
     df.columns = ["partner_iso_code", "consumer_iso_code", "time_period", "obs_value"]
 
@@ -92,14 +95,14 @@ def normalize_datas() -> None:
     df = df.groupby(by=["partner_iso_code", "consumer_iso_code", "time_period"]).sum()
     df.reset_index(inplace=True)
 
-    df.to_csv(r"assets\eurostat_data.csv", index=False)
+    df.to_csv(csv_path, index=False)
 
     if "eurostat_data.csv" in os.listdir("assets"):
-        os.remove(r"assets\eurostat_data_raw.csv")
+        os.remove(csv_raw_path)
 
 
 
-with open(r"assets\database.json", "r") as f:
+with open(database_path, "r") as f:
     DATABASE_COUNTRIES_EUROPE = json.load(f).get("country_europe", {})
 
 def check_iso_code(iso_code: str) -> None | str:
@@ -233,7 +236,9 @@ def _reverse_coords(coords: list):
 
 def reverse_coordinates(iso_code: str) -> list:
 
-    with open(f"assets\\countries\\10m\\{iso_code}.geojson", "r", encoding="utf-8") as file:
+    country_shape_path = directory / f"assets\\countries\\10m\\{iso_code}.geojson"
+
+    with open(country_shape_path, "r", encoding="utf-8") as file:
         geo = json.load(file)["features"]
 
         final_coordinates = []
